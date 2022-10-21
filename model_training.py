@@ -41,7 +41,7 @@ def linear_model(type,x,y):
         
     return x,y,y_pred,model,w, b
     
-
+#random forest
 def randomforest(n_trees,maxdepth,x,y):
 
     cols = x.columns
