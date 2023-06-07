@@ -14,8 +14,7 @@ import random
 
 def linear_model(type,x,y):
 
-    random.seed(10) #delete?
-    x_train, x_test, y_train, y_test = train_test_split(x, y,test_size=0.33)
+    x_train, x_test, y_train, y_test = train_test_split(x, y,test_size=0.33,random_state=0)
 
     if type=='LR':
         model = LogisticRegression(solver='liblinear', random_state=0,C=10.0) #choose C?
@@ -41,7 +40,7 @@ def linear_model(type,x,y):
         
     return x,y,y_pred,model,w, b
     
-#random forest
+
 def randomforest(n_trees,maxdepth,x,y):
 
     cols = x.columns
