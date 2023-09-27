@@ -8,18 +8,18 @@ from sklearn.model_selection import GridSearchCV
 import random
 
 
+
 #logistic regression or svm with linear kernel
 
 
 
 def linear_model(type,x,y):
-
     x_train, x_test, y_train, y_test = train_test_split(x, y,test_size=0.33,random_state=0)
 
     if type=='LR':
         model = LogisticRegression(solver='liblinear', random_state=0,C=10.0) #choose C?
         model.fit(x_train,y_train)
-        y_pred_prob=model.predict_proba(x_test)
+        y_pred_prob=model.predict_proba(x)
         y_pred=pd.DataFrame(model.predict(x).tolist(),index=x.index,columns=['y'])
         w=model.coef_
         b=model.intercept_
@@ -38,15 +38,18 @@ def linear_model(type,x,y):
         b=model.intercept_
 
         
-    return x,y,y_pred,model,w, b
+    return x,y,y_pred,y_pred_prob,model,w, b
     
 
-def randomforest(n_trees,maxdepth,x,y):
+def randomforest(n_trees,maxdepth,x,y,features_type):
 
-    cols = x.columns
-    num_cols = x._get_numeric_data().columns
-    cat_cols=list(set(cols) - set(num_cols))
-    categ=[i for i, j in enumerate(cols) if j in cat_cols] #index categorical variables
+    #cols = x.columns
+    #num_cols = x._get_numeric_data().columns
+    #cat_cols=list(set(cols) - set(num_cols))
+    features=list(features_type.keys())
+    index_cat_bin=[i for (f,i) in zip(features,range(len(features))) if features_type[f]=='CatBinary']
+    index_cat_ord=[i for (f,i) in zip(features,range(len(features))) if features_type[f]=='CatOrdinal']
+    index_cont=[i for (f,i) in zip(features,range(len(features))) if features_type[f]=='Numerical']
 
     x_train, x_test, y_train, y_test = train_test_split(x, y,test_size=0.33,random_state=0)
     index=x_train.index #to know x_train and x_test 
@@ -157,16 +160,27 @@ def randomforest(n_trees,maxdepth,x,y):
                 l3=l2[k]
                 constraints_right.append((i,j,l3[0],l3[1]))
     
-    constraints_right_categorical=[]
-    constraints_left_categorical=[]
+    constraints_right_categorical_bin=[]
+    constraints_left_categorical_bin=[]
+    constraints_right_categorical_ord=[]
+    constraints_left_categorical_ord=[]
+    constraints_right_numerical=[]
+    constraints_left_numerical=[]
     for res in constraints_right:
-        if res[2] in categ:
-            constraints_right_categorical.append(res)
+        if res[2] in index_cat_bin:
+            constraints_right_categorical_bin.append(res)
+        elif res[2] in index_cat_ord:
+            constraints_right_categorical_ord.append(res)
+        else:
+            constraints_right_numerical.append(res)
     for res in constraints_left:
-        if res[2] in categ:
-            constraints_left_categorical.append(res)
-    constraints_right_numerical=[x for x in constraints_right if x not in constraints_right_categorical]
-    constraints_left_numerical=[x for x in constraints_left if x not in constraints_left_categorical]
+        if res[2] in index_cat_bin:
+            constraints_left_categorical_bin.append(res)
+        elif res[2] in index_cat_ord:
+            constraints_left_categorical_ord.append(res)
+        else:
+            constraints_left_numerical.append(res)
+    
 
     values={}
     for i in range(n_trees):
@@ -182,4 +196,4 @@ def randomforest(n_trees,maxdepth,x,y):
    
    
    
-    return leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical,constraints_left_categorical, index, x, y, y_pred, y_pred_prob, model, tree_data
+    return leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical_bin,constraints_left_categorical_bin,constraints_right_categorical_ord,constraints_left_categorical_ord, index, x, y, y_pred, y_pred_prob, model, tree_data
