@@ -5,7 +5,7 @@ Created on Thu Jan  9 14:03:17 2020
 @author: Jasone
 """
 
-
+# el run
 
 from __future__ import division
 #import Pyomo
@@ -13,50 +13,51 @@ from pyomo.environ import *
 from pyomo.opt import SolverFactory
 from numpy import linalg as l2
 
-import modelo_opt
-import model_training
+import modelo_opt 
+import model_training 
 import numpy as np
 import pandas as pd
 import os
 import math
 
 
-def feature_type(dataset):
-        features=list(dataset.columns)
-        feat_type = ['Categorical' if x.name == 'category' else 'Numerical' for x in dataset.dtypes]
-        features_type = dict(zip(features, feat_type))
-        return features_type
 
-def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical,constraints_left_categorical,index_cont,index_cat,model_clas,tree_data,x_ini,lam,nu):
+def optimization_collective(x0,y0,lowerOrd,upperOrd,weight_discrete,perc,model,leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical_bin,constraints_left_categorical_bin,constraints_right_categorical_ord,constraints_left_categorical_ord,features_type,index_cont,index_cat_bin,index_cat_ord,model_clas,tree_data,timelimit,x_ini,lam,nu):
            
     n_features=x0.shape[1]
     n_ind=x0.shape[0]
     n_trees=len(leaves)
-    features=list(x0.columns)
-    features_type=feature_type(x0)
-    #indices=list(x0.index)
-
+    features=list(features_type.keys())
+    #features_type=feature_type(x0)
+    indices=list(x0.index)
     nu2=n_trees*(2*nu-1)
 
-    n_cat=sum(x0.dtypes=='category')
-    n_cont=x0.shape[1]-n_cat
-
     x0_1={}
-    x0_2={}
+    x0_2a={}
+    x0_2b={}
 
-    cat_features=[f for f in features if features_type[f]=='Categorical']
+    cat_bin_features=[f for f in features if features_type[f]=='CatBinary']
+    cat_ord_features=[f for f in features if features_type[f]=='CatOrdinal']
     cont_features=[f for f in features if features_type[f]=='Numerical']
+    n_cat_bin=len(cat_bin_features)
+    n_cat_ord=len(cat_ord_features)
+    n_cont=len(cont_features)
 
     for j in range(0,n_ind):
         for (f,i) in zip(cont_features,index_cont):
             x0_1[i,j]=x0.iloc[j][f]
-    for j in range(0,n_ind):
-        for (f,i) in zip(cat_features,index_cat):
-            x0_2[i,j]=x0.iloc[j][f]
 
-    y={}
     for j in range(0,n_ind):
-        y[j]=-list(y0)[j]
+        for (f,i) in zip(cat_bin_features,index_cat_bin):
+            x0_2a[i,j]=x0.iloc[j][f]
+    
+    for j in range(0,n_ind):
+        for (f,i) in zip(cat_ord_features,index_cat_ord):
+            x0_2b[i,j]=x0.iloc[j][f]
+
+    y_final={}
+    for j in range(0,n_ind):
+        y_final[j]=-list(y0)[j]
 
     #initial solution:
     
@@ -66,10 +67,15 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
             for (f,i) in zip(cont_features,index_cont):
                 x_ini_1[i,j]=x_ini.iloc[j][f]
 
-        x_ini_2={}   
+        x_ini_2a={}   
         for j in range(0,n_ind):
-            for (f,i) in zip(cat_features,index_cat):
-                x_ini_2[i,j]=x_ini.iloc[j][f]
+            for (f,i) in zip(cat_bin_features,index_cat_bin):
+                x_ini_2a[i,j]=x_ini.iloc[j][f]
+
+        x_ini_2b={}   
+        for j in range(0,n_ind):
+            for (f,i) in zip(cat_ord_features,index_cat_ord):
+                x_ini_2b[i,j]=x_ini.iloc[j][f]
 
         sol_ini=model_clas.apply(x_ini)  #necesito el modelo
         z_sol_ini={}
@@ -100,8 +106,10 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
 
     n_left_num=len(constraints_left_numerical)
     n_right_num=len(constraints_right_numerical)
-    n_left_cat=len(constraints_left_categorical)
-    n_right_cat=len(constraints_right_categorical)
+    n_left_cat_bin=len(constraints_left_categorical_bin)
+    n_right_cat_bin=len(constraints_right_categorical_bin)
+    n_left_cat_ord=len(constraints_left_categorical_ord)
+    n_right_cat_ord=len(constraints_right_categorical_ord)
 
     restric_left_num={}
     for i in range(n_left_num):
@@ -111,13 +119,22 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
     for i in range(n_right_num):
         restric_right_num[i]=constraints_right_numerical[i]
 
-    restric_left_cat={}
-    for i in range(n_left_cat):
-        restric_left_cat[i]=constraints_left_categorical[i]
+    restric_left_cat_bin={}
+    for i in range(n_left_cat_bin):
+        restric_left_cat_bin[i]=constraints_left_categorical_bin[i]
 
-    restric_right_cat={}
-    for i in range(n_right_cat):
-        restric_right_cat[i]=constraints_right_categorical[i]
+    restric_right_cat_bin={}
+    for i in range(n_right_cat_bin):
+        restric_right_cat_bin[i]=constraints_right_categorical_bin[i]
+
+    restric_left_cat_ord={}
+    for i in range(n_left_cat_ord):
+        restric_left_cat_ord[i]=constraints_left_categorical_ord[i]
+
+    restric_right_cat_ord={}
+    for i in range(n_right_cat_ord):
+        restric_right_cat_ord[i]=constraints_right_categorical_ord[i]
+
 
 
     values_leaf_dict={}
@@ -128,30 +145,36 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
     data= {None: dict(
             #N0 = {None : 0},  #n variables innamovibles
             N1 = {None : n_cont}, #n variables continuas
-            N2 = {None : n_cat},  #n variables categoricas
+            N2a = {None : n_cat_bin},#n variables categoricas
+            N2b= {None: n_cat_ord},
             #x0_0={None:0},
             ind ={None: n_ind},
-            M1={None:1}, 
-            M2={None:1}, 
-            M3={None:2}, 
-            #MAD={0: 0.3283222612880656,1: 1.0,2: 9.370046020955403,3: 0.12972769411924018,4: 0.5122390664936853,
-            #        5: 28.984873371784516,6: 1.914261854423508, 7: 2.965204437011204, 8: 108.22996195090894,
-            #        9: 1.7049925512814401,10: 8.095008113040556,11: 7.1090776377343605,12: 1.0},
+            M1={None:100}, 
+            M2={None:100}, 
+            M3={None:100}, 
             epsi={None:1e-6},
             trees = {None:n_trees},
             leaves = leaf,
             values_leaf=values_leaf_dict,
             nleft_num={None:n_left_num},
             nright_num={None:n_right_num},
-            nleft_cat={None:n_left_cat},
-            nright_cat={None:n_right_cat},
+            nleft_cat_bin={None:n_left_cat_bin},
+            nright_cat_bin={None:n_right_cat_bin},
+            nleft_cat_ord={None:n_left_cat_ord},
+            nright_cat_ord={None:n_right_cat_ord},
             left_num=restric_left_num,
             right_num=restric_right_num,
-            left_cat=restric_left_cat,
-            right_cat=restric_right_cat,
+            left_cat_bin=restric_left_cat_bin,
+            right_cat_bin=restric_right_cat_bin,
+            left_cat_ord=restric_left_cat_ord,
+            right_cat_ord=restric_right_cat_ord,
             x0_1=x0_1,
-            x0_2=x0_2,
-            y=y,
+            x0_2a=x0_2a,
+            x0_2b=x0_2b,
+            lowerOrd=lowerOrd,
+            upperOrd=upperOrd,
+            weight_discrete=weight_discrete,
+            y_f=y_final,
             perc={None: perc},
             lam={None:lam},
             nu={None:nu2}
@@ -161,7 +184,7 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
   
     instance = model.create_instance(data) 
     opt= SolverFactory('gurobi', solver_io="python")
-    #opt.options['TimeLimit'] = timelimit
+    opt.options['TimeLimit'] = timelimit
 
     if isinstance(x_ini,pd.DataFrame):
 
@@ -170,8 +193,12 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
                 instance.x_1[i,j]=x_ini_1[i,j]
     
         for j in range(0,n_ind):
-            for i in index_cat:
-                instance.x_2[i,j]=x_ini_2[i,j]
+            for i in index_cat_bin:
+                instance.x_2a[i,j]=x_ini_2a[i,j]
+
+        for j in range(0,n_ind):
+            for i in index_cat_ord:
+                instance.x_2b[i,j]=x_ini_2b[i,j]
 
         for i in range(0,n_ind):
             for t in range(n_trees):
@@ -183,27 +210,38 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
                 instance.D[t,i]=D[t,i]
       
     results = opt.solve(instance,tee=True) # tee=True: ver iteraciones por pantalla
-    #results = opt.solve(instance,tee=True,warmstart=True)
 
- 
+
+
 
     x_sol_aux=np.zeros([len(features),n_ind])
 
     for i in index_cont:
         for j in instance.I:
             x_sol_aux[i,j]=instance.x_1[i,j].value
-    for i in index_cat:
+    for i in index_cat_bin:
         for j in instance.I:
-            x_sol_aux[i,j]=instance.x_2[i,j].value
-    
-  
+            x_sol_aux[i,j]=instance.x_2a[i,j].value
 
-   
+    for i in index_cat_ord:
+        for j in instance.I:
+            x_sol_aux[i,j]=instance.x_2b[i,j].value
+    
+    
+
+    z_sol={}
+    for i in range(0,n_ind):
+            for t in range(n_trees):
+                for l in range(leaves[t]):
+                    z_sol[t,l,i]=instance.z[t,l,i].value
 
 
     x_sol=pd.DataFrame(x_sol_aux,features)
 
-  
+    print(x_sol)
+
+
+
 
     cambio_x=np.zeros([len(features),n_ind])
     
@@ -217,60 +255,50 @@ def optimization_collective(x0,y0,perc,model,leaves, values, constraints_right_n
 
     data=pd.DataFrame(cambio_x,index=features)
 
-    data=data.transpose()
+    data=data.T
 
 
 
-    #if objective=="l2l0ind":
-    #   model.lam*(sum(model.xi[n,i] for n in model.Cont for i in model.I)+sum((model.x0_2[n,i]-model.x_2[n,i])**2 for n in model.Cat for i in model.I))+(sum( (model.x0_1[n,i]-model.x_1[n,i])**2 for n in model.Cont for i in model.I))
-        
+    return x_sol, data
 
-
-    #l2 + l0 global
-    #elif objective=="l2l0global":
-       
-    objective_value= instance.lam.value*(sum(instance.xi2[n].value for n in list(instance.Cont.data()))+sum(instance.xi3[n].value for n in list(instance.Cat.data())))+sum( (instance.x0_1[n,i]-instance.x_1[n,i].value)**2 for n in list(instance.Cont.data()) for i in list(instance.I.data()))
-        
-
-
-    
-    
-
-    return data, objective_value
-
-
-def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical,constraints_left_categorical,index_cont,index_cat,model_clas,tree_data,x,y,nu):
+def optimization_individual(i,timelimit,x0,y0,lowerOrd,upperOrd,weight_discrete,model,leaves, values, constraints_right_numerical, constraints_left_numerical, constraints_right_categorical_bin,constraints_left_categorical_bin,constraints_right_categorical_ord,constraints_left_categorical_ord,features_type,index_cont,index_cat_bin,index_cat_ord,model_clas,tree_data,lam,nu,x,y_pred):
      
+    
     n_features=x0.shape[1]
     n_ind=x0.shape[0]
     n_trees=len(leaves)
-    features=list(x0.columns)
-    features_type=feature_type(x0)
-    n_cat=sum(x0.dtypes=='category')
-    n_cont=x0.shape[1]-n_cat
+    features=list(features_type.keys())
 
     nu2=n_trees*(2*nu-1)
 
     x0=x0.loc[i]
     y0=y0[i]
-    print(y0)
 
     x0_1={}
-    x0_2={}
+    x0_2a={}
+    x0_2b={}
 
-    cat_features=[f for f in features if features_type[f]=='Categorical']
+    cat_bin_features=[f for f in features if features_type[f]=='CatBinary']
+    cat_ord_features=[f for f in features if features_type[f]=='CatOrdinal']
     cont_features=[f for f in features if features_type[f]=='Numerical']
+    n_cat_bin=len(cat_bin_features)
+    n_cat_ord=len(cat_ord_features)
+    n_cont=len(cont_features)
 
     for (f,i) in zip(cont_features,index_cont):
-         x0_1[i]=x0[f]
-    for (f,i) in zip(cat_features,index_cat):
-         x0_2[i]=x0[f]
+        x0_1[i]=x0[f]
+
+    for (f,i) in zip(cat_bin_features,index_cat_bin):
+        x0_2a[i]=x0[f]
+    
+    for (f,i) in zip(cat_ord_features,index_cat_ord):
+        x0_2b[i]=x0[f]
 
 
     
     distance=100
     for i in range(x.shape[0]):
-        if y.iloc[i]==-y0: #y_pred
+        if y_pred.iloc[i][0]==-y0: #y_pred
             d=l2.norm(x0-x.iloc[i])
             if d<=distance:
                 distance=d
@@ -278,11 +306,17 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
     
 
     x_ini_1={}
-    x_ini_2={}
+    x_ini_2a={}
+    x_ini_2b={}
+
     for (f,i) in zip(cont_features,index_cont):
-        x_ini_1[i]=x_ini[f]
-    for (f,i) in zip(cat_features,index_cat):
-         x_ini_2[i]=x_ini[f]
+        x_ini_1[i]=x0[f]
+
+    for (f,i) in zip(cat_bin_features,index_cat_bin):
+        x_ini_2a[i]=x0[f]
+    
+    for (f,i) in zip(cat_ord_features,index_cat_ord):
+        x_ini_2b[i]=x0[f]
     
 
     x_ini=np.array(x_ini).reshape(1,-1)
@@ -310,8 +344,10 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
 
     n_left_num=len(constraints_left_numerical)
     n_right_num=len(constraints_right_numerical)
-    n_left_cat=len(constraints_left_categorical)
-    n_right_cat=len(constraints_right_categorical)
+    n_left_cat_bin=len(constraints_left_categorical_bin)
+    n_right_cat_bin=len(constraints_right_categorical_bin)
+    n_left_cat_ord=len(constraints_left_categorical_ord)
+    n_right_cat_ord=len(constraints_right_categorical_ord)
 
     restric_left_num={}
     for i in range(n_left_num):
@@ -321,47 +357,59 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
     for i in range(n_right_num):
         restric_right_num[i]=constraints_right_numerical[i]
 
-    restric_left_cat={}
-    for i in range(n_left_cat):
-        restric_left_cat[i]=constraints_left_categorical[i]
+    restric_left_cat_bin={}
+    for i in range(n_left_cat_bin):
+        restric_left_cat_bin[i]=constraints_left_categorical_bin[i]
 
-    restric_right_cat={}
-    for i in range(n_right_cat):
-        restric_right_cat[i]=constraints_right_categorical[i]
+    restric_right_cat_bin={}
+    for i in range(n_right_cat_bin):
+        restric_right_cat_bin[i]=constraints_right_categorical_bin[i]
+
+    restric_left_cat_ord={}
+    for i in range(n_left_cat_ord):
+        restric_left_cat_ord[i]=constraints_left_categorical_ord[i]
+
+    restric_right_cat_ord={}
+    for i in range(n_right_cat_ord):
+        restric_right_cat_ord[i]=constraints_right_categorical_ord[i]
+
 
 
     values_leaf_dict={}
     for t in range(n_trees):
         for l in range(leaves[t]):
             values_leaf_dict[(t,l)]=values[t][l]
-
     data= {None: dict(
-            #N0 = {None : 0},  #n variables innamovibles
             N1 = {None : n_cont}, #n variables continuas
-            N2 = {None : n_cat},  #n variables categoricas
-            #x0_0={None:0},
-            M1={None:1}, 
-            M2={None:1}, 
-            M3={None:2}, 
-            #MAD={0: 0.3283222612880656,1: 1.0,2: 9.370046020955403,3: 0.12972769411924018,4: 0.5122390664936853,
-            #        5: 28.984873371784516,6: 1.914261854423508, 7: 2.965204437011204, 8: 108.22996195090894,
-            #        9: 1.7049925512814401,10: 8.095008113040556,11: 7.1090776377343605,12: 1.0},
+            N2a = {None : n_cat_bin},#n variables categoricas
+            N2b= {None: n_cat_ord},
+            M1={None:100}, 
+            M2={None:100}, 
+            M3={None:100}, 
             epsi={None:1e-6},
             trees = {None:n_trees},
             leaves = leaf,
             values_leaf=values_leaf_dict,
             nleft_num={None:n_left_num},
             nright_num={None:n_right_num},
-            nleft_cat={None:n_left_cat},
-            nright_cat={None:n_right_cat},
+            nleft_cat_bin={None:n_left_cat_bin},
+            nright_cat_bin={None:n_right_cat_bin},
+            nleft_cat_ord={None:n_left_cat_ord},
+            nright_cat_ord={None:n_right_cat_ord},
             left_num=restric_left_num,
             right_num=restric_right_num,
-            left_cat=restric_left_cat,
-            right_cat=restric_right_cat,
+            left_cat_bin=restric_left_cat_bin,
+            right_cat_bin=restric_right_cat_bin,
+            left_cat_ord=restric_left_cat_ord,
+            right_cat_ord=restric_right_cat_ord,
             x0_1=x0_1,
-            x0_2=x0_2,
+            x0_2a=x0_2a,
+            x0_2b=x0_2b,
+            lowerOrd=lowerOrd,
+            upperOrd=upperOrd,
+            weight_discrete=weight_discrete,
             y={None:-y0},
-            lam={None: lam},
+            lam={None:lam},
             nu={None:nu2}
             )}
 
@@ -369,13 +417,16 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
   
     instance = model.create_instance(data) 
     opt= SolverFactory('gurobi', solver_io="python")
-    #opt.options['TimeLimit'] = timelimit
+    opt.options['TimeLimit'] = timelimit
 
     for i in index_cont:
         instance.x_1[i]=x_ini_1[i]
 
-    for i in index_cat:
-        instance.x_2[i]=x_ini_2[i]
+    for i in index_cat_bin:
+        instance.x_2a[i]=x_ini_2a[i]
+
+    for i in index_cat_ord:
+        instance.x_2b[i]=x_ini_2b[i]
 
     for t in range(n_trees):
         for l in range(leaves[t]):
@@ -391,15 +442,16 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
     x_sol_aux=np.zeros(len(features))
     for i in index_cont:
         x_sol_aux[i]=instance.x_1[i].value
-    for i in index_cat:
-        x_sol_aux[i]=instance.x_2[i].value
+    for i in index_cat_bin:
+        x_sol_aux[i]=instance.x_2a[i].value
+    for i in index_cat_ord:
+        x_sol_aux[i]=instance.x_2b[i].value
    
 
 
 
     x_sol=pd.DataFrame(x_sol_aux,features,columns=['x'])
 
- 
 
     salida=-y0*sum([instance.D[t].value for t in range(n_trees)])
     print('salida: '+str(salida))
@@ -413,66 +465,74 @@ def optimization_individual(i,x0,y0,lam,model,leaves, values, constraints_right_
 
 
  
-
-   
-    
     
 
     return x_sol, cambio_x, -y0
 
 
 
-def optimization_lineal_collective(x0,y0,perc,model,w,b,index_cont,index_cat,lam,nu,maxf):
-           
+def optimization_lineal_collective(x0,y0,lowerOrd,upperOrd,weight_discrete,perc,model,w,b,index_cont,index_cat_bin,index_cat_ord,features_type,lam,nu,maxf,timelimit):
+    
     n_features=x0.shape[1]
     n_ind=x0.shape[0]
-    features=list(x0.columns)
-    features_type=feature_type(x0)
-    #indices=list(x0.index)
+    features=list(features_type.keys())
+    indices=list(x0.index)
 
-    nu2=-math.log(1/nu-1)
 
-    n_cat=sum(x0.dtypes=='category')
-    n_cont=x0.shape[1]-n_cat
 
     x0_1={}
-    x0_2={}
+    x0_2a={}
+    x0_2b={}
 
-    cat_features=[f for f in features if features_type[f]=='Categorical']
+    cat_bin_features=[f for f in features if features_type[f]=='CatBinary']
+    cat_ord_features=[f for f in features if features_type[f]=='CatOrdinal']
     cont_features=[f for f in features if features_type[f]=='Numerical']
+    n_cat_bin=len(cat_bin_features)
+    n_cat_ord=len(cat_ord_features)
+    n_cont=len(cont_features)
 
     for j in range(0,n_ind):
         for (f,i) in zip(cont_features,index_cont):
             x0_1[i,j]=x0.iloc[j][f]
-    for j in range(0,n_ind):
-        for (f,i) in zip(cat_features,index_cat):
-            x0_2[i,j]=x0.iloc[j][f]
 
-    y={}
     for j in range(0,n_ind):
-        y[j]=-list(y0)[j]
+        for (f,i) in zip(cat_bin_features,index_cat_bin):
+            x0_2a[i,j]=x0.iloc[j][f]
+    
+    for j in range(0,n_ind):
+        for (f,i) in zip(cat_ord_features,index_cat_ord):
+            x0_2b[i,j]=x0.iloc[j][f]
 
-    k=0; # y(wx+b)>=k
+    y_final={}
+    for j in range(0,n_ind):
+        y_final[j]=-list(y0)[j]
+
+    nu2=-math.log(1/nu-1); # y(wx+b)>=nu2
 
     w_dict={}
     for i in range(len(features)):
         w_dict[i]=w[0][i]
 
-    bound=abs(sum(w[0])+b)[0]
+    bound=10
 
     data= {None: dict(
             #N0 = {None : 0},  #n variables innamovibles
             N1 = {None : n_cont}, #n variables continuas
-            N2 = {None : n_cat},  #n variables categoricas
+            N2a = {None : n_cat_bin},#n variables categoricas
+            N2b= {None: n_cat_ord},
             #x0_0={None:0},
             ind ={None: n_ind},
-            M3={None:1.1}, 
+            M3={None:100}, 
             k = {None: nu2},
             w=w_dict,
             b={None: b[0]},
             x0_1=x0_1,
-            x0_2=x0_2,
-            y=y,
+            x0_2a=x0_2a,
+            x0_2b=x0_2b,
+            lowerOrd=lowerOrd,
+            upperOrd=upperOrd,
+            weight_discrete=weight_discrete,
+            y=y_final,
             perc={None: perc},
             bound={None: bound},
             lam={None:lam},
@@ -483,30 +543,30 @@ def optimization_lineal_collective(x0,y0,perc,model,w,b,index_cont,index_cat,lam
   
     instance = model.create_instance(data) 
     opt= SolverFactory('gurobi', solver_io="python")
-    #opt.options['TimeLimit'] = timelimit
+    opt.options['TimeLimit'] = timelimit
+    
 
       
     results = opt.solve(instance,tee=True) # tee=True: ver iteraciones por pantalla
-    #results = opt.solve(instance,tee=True,warmstart=True)
-
- 
 
     x_sol_aux=np.zeros([len(features),n_ind])
 
     for i in index_cont:
         for j in instance.I:
             x_sol_aux[i,j]=instance.x_1[i,j].value
-    for i in index_cat:
+    for i in index_cat_bin:
         for j in instance.I:
-            x_sol_aux[i,j]=instance.x_2[i,j].value
-    
+            x_sol_aux[i,j]=instance.x_2a[i,j].value
 
+    for i in index_cat_ord:
+        for j in instance.I:
+            x_sol_aux[i,j]=instance.x_2b[i,j].value
+    
 
     x_sol=pd.DataFrame(x_sol_aux,features)
 
     print(x_sol)
 
-    
 
     cambio_x=np.zeros([len(features),n_ind])
     
@@ -514,7 +574,7 @@ def optimization_lineal_collective(x0,y0,perc,model,w,b,index_cont,index_cat,lam
     for i in range(len(features)):
         for j in range(n_ind):
             cambio_x[i,j]=x_sol_aux[i,j]-x0.iloc[j,i]
-            if cambio_x[i,j]<=1e-10:
+            if abs(cambio_x[i,j])<=1e-10:
                 cambio_x[i,j]==0
     
 
@@ -522,69 +582,71 @@ def optimization_lineal_collective(x0,y0,perc,model,w,b,index_cont,index_cat,lam
 
     data=data.transpose()
 
-    objective_value= instance.lam.value*(sum(instance.xi2[n].value for n in list(instance.Cont.data()))+sum(instance.xi3[n].value for n in list(instance.Cat.data())))+sum( (instance.x0_1[n,i]-instance.x_1[n,i].value)**2 for n in list(instance.Cont.data()) for i in list(instance.I.data()))
-        
 
-    
-    
-    
-
-    return data, objective_value
+    return x_sol, data
 
 
 
-def optimization_lineal_ind(i,x0,y0,lam,model,w,b,index_cont,index_cat,nu):
-    # Ruta carpeta donde estás trabajando
-    #path = "C:/Users/jas_r/OneDrive/Documentos/PhD/codigo"  
-    #os.chdir(path)
+def optimization_lineal_ind(i,x0,y0,lowerOrd,upperOrd,weight_discrete,model,w,b,index_cont,index_cat_bin,index_cat_ord,features_type,lam,nu):
+   
+  
+
     features=list(x0.columns)
-    features_type=feature_type(x0)
-    cat_features=[f for f in features if features_type[f]=='Categorical']
-    cont_features=[f for f in features if features_type[f]=='Numerical']
-    n_cat=sum(x0.dtypes=='category')
-    n_cont=x0.shape[1]-n_cat
-
-    nu2=-math.log(1/nu-1)
+    n_features=len(features)
+    
 
 
     x0=x0.loc[i]
     y0=y0[i]
 
+    x0_1={}
+    x0_2a={}
+    x0_2b={}
+
+    cat_bin_features=[f for f in features if features_type[f]=='CatBinary']
+    cat_ord_features=[f for f in features if features_type[f]=='CatOrdinal']
+    cont_features=[f for f in features if features_type[f]=='Numerical']
+    n_cat_bin=len(cat_bin_features)
+    n_cat_ord=len(cat_ord_features)
+    n_cont=len(cont_features)
    
 
-    x0_1={}
-    x0_2={}
 
     for (f,i) in zip(cont_features,index_cont):
          x0_1[i]=x0[f]
-    for (f,i) in zip(cat_features,index_cat):
-         x0_2[i]=x0[f]
+    for (f,i) in zip(cat_bin_features,index_cat_bin):
+         x0_2a[i]=x0[f]
+    for (f,i) in zip(cat_ord_features,index_cat_ord):
+         x0_2b[i]=x0[f]
 
 
-
+    nu2=-math.log(1/nu-1)
 
     w_dict={}
     for i in range(len(features)):
         w_dict[i]=w[0][i]
-    
+
 
     data= {None: dict(
             #N0 = {None : 0},  #n variables innamovibles
             N1 = {None : n_cont}, #n variables continuas
-            N2 = {None : n_cat},  #n variables categoricas
-            #x0_0={None:0},
-            x0_1=x0_1,
-            x0_2=x0_2,
-            M3={None:2},
-            y={None: -y0},
+            N2a = {None : n_cat_bin},#n variables categoricas
+            N2b= {None: n_cat_ord},
+            M3={None:100}, 
             k = {None: nu2},
             w=w_dict,
             b={None: b[0]},
-            lam={None: lam},
+            x0_1=x0_1,
+            x0_2a=x0_2a,
+            x0_2b=x0_2b,
+            lowerOrd=lowerOrd,
+            upperOrd=upperOrd,
+            weight_discrete=weight_discrete,
+            y={None: -y0},
+            lam={None:lam}
             )}
 
 
-    
  
     instance = model.create_instance(data) 
     opt= SolverFactory('gurobi', solver_io="python")       
@@ -593,19 +655,20 @@ def optimization_lineal_ind(i,x0,y0,lam,model,w,b,index_cont,index_cat,nu):
     x_sol_aux=np.zeros(len(features))
     for i in index_cont:
         x_sol_aux[i]=instance.x_1[i].value
-    for i in index_cat:
-        x_sol_aux[i]=instance.x_2[i].value
+    for i in index_cat_bin:
+        x_sol_aux[i]=instance.x_2a[i].value
+    for i in index_cat_ord:
+        x_sol_aux[i]=instance.x_2b[i].value
    
 
 
     x_sol=pd.DataFrame(x_sol_aux,features,columns=['x'])
 
-    
     cambio_x=np.zeros(len(features))
 
     for j in range(len(features)):
         cambio_x[j]=x_sol_aux[j]-x0[j]
 
-    
+
 
     return x_sol, cambio_x, -y0
